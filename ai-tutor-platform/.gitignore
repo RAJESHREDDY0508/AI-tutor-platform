@@ -1,0 +1,67 @@
+# ─── Dependencies ──────────────────────────────────────────────────
+node_modules/
+.yarn/cache
+.yarn/unplugged
+.yarn/build-state.yml
+.yarn/install-state.gz
+.pnp.*
+
+# ─── Build Outputs ─────────────────────────────────────────────────
+dist/
+build/
+out/
+.next/
+.nuxt/
+
+# ─── TypeScript ────────────────────────────────────────────────────
+*.tsbuildinfo
+tsconfig.tsbuildinfo
+
+# ─── Environment & Secrets ─────────────────────────────────────────
+.env
+.env.*
+!.env.example
+!.env.*.example
+*.pem
+*.key
+*.crt
+*.cert
+secrets/
+
+# ─── Logs ──────────────────────────────────────────────────────────
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+# ─── Testing & Coverage ────────────────────────────────────────────
+coverage/
+.nyc_output/
+*.lcov
+test-results/
+junit.xml
+
+# ─── Docker ────────────────────────────────────────────────────────
+.docker/
+
+# ─── IDE & OS ──────────────────────────────────────────────────────
+.idea/
+.vscode/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# ─── Misc ──────────────────────────────────────────────────────────
+*.tgz
+*.tar.gz
+.cache/
+tmp/
+temp/

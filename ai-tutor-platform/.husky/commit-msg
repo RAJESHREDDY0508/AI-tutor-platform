@@ -1,0 +1,6 @@
+#!/usr/bin/env sh
+. "$(dirname -- "$0")/_/husky.sh"
+
+# Enforce Conventional Commits format
+# e.g. feat(auth): add JWT refresh token endpoint
+npx --no -- commitlint --edit "$1"
