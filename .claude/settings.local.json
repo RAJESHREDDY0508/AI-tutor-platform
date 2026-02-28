@@ -78,7 +78,8 @@
       "Bash(/c/Users/rajes/Desktop/Teacher/ai-tutor-platform/backend/payment-service/src/app.ts:*)",
       "Bash(__NEW_LINE_b33571993ee6c86e__ cat)",
       "Bash(/c/Users/rajes/Desktop/Teacher/ai-tutor-platform/backend/payment-service/src/index.ts:*)",
-      "Bash(/c/Users/rajes/Desktop/Teacher/ai-tutor-platform/backend/README.md:*)"
+      "Bash(/c/Users/rajes/Desktop/Teacher/ai-tutor-platform/backend/README.md:*)",
+      "Bash(chmod:*)"
     ]
   }
 }

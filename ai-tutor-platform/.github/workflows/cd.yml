@@ -1,0 +1,49 @@
+name: CD – Deploy to Staging
+
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+    branches: [main]
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_PREFIX: ${{ github.repository_owner }}/ai-tutor
+
+jobs:
+  deploy-staging:
+    name: Deploy to Staging
+    runs-on: ubuntu-latest
+    if: ${{ github.event.workflow_run.conclusion == 'success' }}
+    environment:
+      name: staging
+      url: https://staging.ai-tutor.io
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Update kubeconfig for EKS
+        run: |
+          aws eks update-kubeconfig \
+            --name ai-tutor-staging \
+            --region ${{ secrets.AWS_REGION }}
+
+      - name: Deploy with Helm / kubectl (stub)
+        run: |
+          echo "Deploying SHA ${{ github.sha }} to staging..."
+          # TODO Sprint 3: wire up actual Helm charts or kubectl apply
+          # kubectl set image deployment/auth-service \
+          #   auth-service=${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}-auth-service:sha-${{ github.sha }} \
+          #   --namespace ai-tutor-staging
+
+      - name: Run health checks
+        run: bash scripts/deployment/health-check.sh
+        env:
+          DEPLOY_HOST: staging.ai-tutor.io

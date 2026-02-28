@@ -1,0 +1,415 @@
+version: '3.9'
+
+# ─────────────────────────────────────────────────────────────────────────────
+#  AI Tutor Platform – Local Development Environment
+#  Usage: docker-compose up --build
+#  Services:
+#    Frontend:           http://localhost:3000
+#    Auth API:           http://localhost:8001/v1  (Swagger: /api)
+#    Session API:        http://localhost:8002/v1
+#    Curriculum API:     http://localhost:8003/v1
+#    Homework API:       http://localhost:8004/v1
+#    Analytics API:      http://localhost:8005/v1
+#    Payment API:        http://localhost:8006/v1
+#    LLM Wrapper:        http://localhost:5001/v1
+#    Vector DB:          http://localhost:5002/v1
+#    Prompt Engine:      http://localhost:5003/v1
+#    Safety Guardrails:  http://localhost:5004/v1
+#    PostgreSQL:         localhost:5432
+#    Redis:              localhost:6379
+# ─────────────────────────────────────────────────────────────────────────────
+
+x-backend-common: &backend-common
+  restart: unless-stopped
+  networks:
+    - ai-tutor-internal
+  depends_on:
+    postgres:
+      condition: service_healthy
+    redis:
+      condition: service_healthy
+
+x-ai-service-common: &ai-service-common
+  restart: unless-stopped
+  networks:
+    - ai-tutor-internal
+
+# ─── Networks ─────────────────────────────────────────────────────────────
+networks:
+  ai-tutor-internal:
+    driver: bridge
+  ai-tutor-external:
+    driver: bridge
+
+# ─── Volumes ──────────────────────────────────────────────────────────────
+volumes:
+  postgres_data:
+  redis_data:
+
+services:
+
+  # ─── Infrastructure ─────────────────────────────────────────────────────
+
+  postgres:
+    image: postgres:16-alpine
+    container_name: ai-tutor-postgres
+    restart: unless-stopped
+    networks:
+      - ai-tutor-internal
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: ai_tutor_auth
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./scripts/migrations/init-databases.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    ports:
+      - '5432:5432'
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U postgres']
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  redis:
+    image: redis:7-alpine
+    container_name: ai-tutor-redis
+    restart: unless-stopped
+    networks:
+      - ai-tutor-internal
+    command: ['redis-server', '--appendonly', 'yes', '--maxmemory', '256mb', '--maxmemory-policy', 'allkeys-lru']
+    volumes:
+      - redis_data:/data
+    ports:
+      - '6379:6379'
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 5s
+
+  # ─── Frontend ────────────────────────────────────────────────────────────
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      target: builder          # Use builder stage in dev (serves via Vite)
+    container_name: ai-tutor-frontend
+    restart: unless-stopped
+    networks:
+      - ai-tutor-internal
+      - ai-tutor-external
+    ports:
+      - '3000:3000'
+    environment:
+      VITE_AUTH_SERVICE_URL: http://auth-service:8001
+      VITE_SESSION_SERVICE_URL: http://session-service:8002
+      VITE_CURRICULUM_SERVICE_URL: http://curriculum-service:8003
+      NODE_ENV: development
+    volumes:
+      - ./frontend/src:/app/src:ro
+    command: yarn dev --host 0.0.0.0 --port 3000
+    depends_on:
+      - auth-service
+
+  # ─── Backend Microservices ───────────────────────────────────────────────
+
+  auth-service:
+    <<: *backend-common
+    build:
+      context: ./backend/auth-service
+      dockerfile: Dockerfile
+      target: builder
+    container_name: ai-tutor-auth-service
+    networks:
+      - ai-tutor-internal
+      - ai-tutor-external
+    ports:
+      - '8001:8001'
+    environment:
+      NODE_ENV: development
+      PORT: 8001
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_NAME: ai_tutor_auth
+      DB_USER: postgres
+      DB_PASSWORD: postgres
+      DB_SYNCHRONIZE: 'true'
+      DB_LOGGING: 'true'
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      JWT_SECRET: local-dev-jwt-secret-min-32-chars-long
+      JWT_ACCESS_EXPIRES_IN: 15m
+      JWT_REFRESH_EXPIRES_IN: 7d
+      JWT_ISSUER: ai-tutor-platform
+      JWT_AUDIENCE: ai-tutor-clients
+      BCRYPT_ROUNDS: 10
+      THROTTLE_TTL_SECONDS: 60
+      THROTTLE_LIMIT: 100
+      INTERNAL_SERVICE_SECRET: local-dev-internal-secret-min-32-chars
+      AWS_REGION: us-east-1
+    healthcheck:
+      test: ['CMD-SHELL', 'wget -qO- http://localhost:8001/v1/health || exit 1']
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    command: yarn dev
+
+  session-service:
+    <<: *backend-common
+    build:
+      context: ./backend/session-service
+      dockerfile: Dockerfile
+      target: builder
+    container_name: ai-tutor-session-service
+    ports:
+      - '8002:8002'
+    environment:
+      NODE_ENV: development
+      PORT: 8002
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_NAME: ai_tutor_sessions
+      DB_USER: postgres
+      DB_PASSWORD: postgres
+      DB_SYNCHRONIZE: 'true'
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      JWT_SECRET: local-dev-jwt-secret-min-32-chars-long
+      JWT_ISSUER: ai-tutor-platform
+      JWT_AUDIENCE: ai-tutor-clients
+      LLM_WRAPPER_URL: http://llm-wrapper:5001
+      VECTOR_DB_URL: http://vector-db:5002
+      PROMPT_ENGINE_URL: http://prompt-engine:5003
+      SAFETY_GUARDRAILS_URL: http://safety-guardrails:5004
+      INTERNAL_SERVICE_SECRET: local-dev-internal-secret-min-32-chars
+    healthcheck:
+      test: ['CMD-SHELL', 'wget -qO- http://localhost:8002/v1/health || exit 1']
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    command: yarn dev
+
+  curriculum-service:
+    <<: *backend-common
+    build:
+      context: ./backend/curriculum-service
+      dockerfile: Dockerfile
+      target: builder
+    container_name: ai-tutor-curriculum-service
+    ports:
+      - '8003:8003'
+    environment:
+      NODE_ENV: development
+      PORT: 8003
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_NAME: ai_tutor_curriculum
+      DB_USER: postgres
+      DB_PASSWORD: postgres
+      DB_SYNCHRONIZE: 'true'
+      JWT_SECRET: local-dev-jwt-secret-min-32-chars-long
+      JWT_ISSUER: ai-tutor-platform
+      JWT_AUDIENCE: ai-tutor-clients
+      LLM_WRAPPER_URL: http://llm-wrapper:5001
+      INTERNAL_SERVICE_SECRET: local-dev-internal-secret-min-32-chars
+    healthcheck:
+      test: ['CMD-SHELL', 'wget -qO- http://localhost:8003/v1/health || exit 1']
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    command: yarn dev
+
+  homework-service:
+    <<: *backend-common
+    build:
+      context: ./backend/homework-service
+      dockerfile: Dockerfile
+      target: builder
+    container_name: ai-tutor-homework-service
+    ports:
+      - '8004:8004'
+    environment:
+      NODE_ENV: development
+      PORT: 8004
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_NAME: ai_tutor_homework
+      DB_USER: postgres
+      DB_PASSWORD: postgres
+      DB_SYNCHRONIZE: 'true'
+      JWT_SECRET: local-dev-jwt-secret-min-32-chars-long
+      JWT_ISSUER: ai-tutor-platform
+      JWT_AUDIENCE: ai-tutor-clients
+      LLM_WRAPPER_URL: http://llm-wrapper:5001
+      INTERNAL_SERVICE_SECRET: local-dev-internal-secret-min-32-chars
+    healthcheck:
+      test: ['CMD-SHELL', 'wget -qO- http://localhost:8004/v1/health || exit 1']
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    command: yarn dev
+
+  analytics-service:
+    <<: *backend-common
+    build:
+      context: ./backend/analytics-service
+      dockerfile: Dockerfile
+      target: builder
+    container_name: ai-tutor-analytics-service
+    ports:
+      - '8005:8005'
+    environment:
+      NODE_ENV: development
+      PORT: 8005
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_NAME: ai_tutor_analytics
+      DB_USER: postgres
+      DB_PASSWORD: postgres
+      DB_SYNCHRONIZE: 'true'
+      JWT_SECRET: local-dev-jwt-secret-min-32-chars-long
+      JWT_ISSUER: ai-tutor-platform
+      JWT_AUDIENCE: ai-tutor-clients
+      INTERNAL_SERVICE_SECRET: local-dev-internal-secret-min-32-chars
+    healthcheck:
+      test: ['CMD-SHELL', 'wget -qO- http://localhost:8005/v1/health || exit 1']
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    command: yarn dev
+
+  payment-service:
+    <<: *backend-common
+    build:
+      context: ./backend/payment-service
+      dockerfile: Dockerfile
+      target: builder
+    container_name: ai-tutor-payment-service
+    ports:
+      - '8006:8006'
+    environment:
+      NODE_ENV: development
+      PORT: 8006
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_NAME: ai_tutor_payments
+      DB_USER: postgres
+      DB_PASSWORD: postgres
+      DB_SYNCHRONIZE: 'true'
+      JWT_SECRET: local-dev-jwt-secret-min-32-chars-long
+      JWT_ISSUER: ai-tutor-platform
+      JWT_AUDIENCE: ai-tutor-clients
+      STRIPE_SECRET_KEY: sk_test_placeholder
+      STRIPE_WEBHOOK_SECRET: whsec_placeholder
+      INTERNAL_SERVICE_SECRET: local-dev-internal-secret-min-32-chars
+    healthcheck:
+      test: ['CMD-SHELL', 'wget -qO- http://localhost:8006/v1/health || exit 1']
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    command: yarn dev
+
+  # ─── AI Services ─────────────────────────────────────────────────────────
+
+  llm-wrapper:
+    <<: *ai-service-common
+    build:
+      context: ./ai-services/llm-wrapper
+      dockerfile: Dockerfile
+      target: builder
+    container_name: ai-tutor-llm-wrapper
+    ports:
+      - '5001:5001'
+    environment:
+      NODE_ENV: development
+      PORT: 5001
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-sk-placeholder}
+      OPENAI_MODEL: gpt-4o
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-sk-placeholder}
+      ANTHROPIC_MODEL: claude-3-5-sonnet-20241022
+      LLM_PRIMARY_PROVIDER: openai
+      INTERNAL_SERVICE_SECRET: local-dev-internal-secret-min-32-chars
+    healthcheck:
+      test: ['CMD-SHELL', 'wget -qO- http://localhost:5001/health || exit 1']
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+    command: yarn dev
+
+  vector-db:
+    <<: *ai-service-common
+    build:
+      context: ./ai-services/vector-db
+      dockerfile: Dockerfile
+      target: builder
+    container_name: ai-tutor-vector-db
+    ports:
+      - '5002:5002'
+    environment:
+      NODE_ENV: development
+      PORT: 5002
+      PINECONE_API_KEY: ${PINECONE_API_KEY:-placeholder}
+      PINECONE_INDEX: ai-tutor-embeddings
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-sk-placeholder}
+      INTERNAL_SERVICE_SECRET: local-dev-internal-secret-min-32-chars
+    healthcheck:
+      test: ['CMD-SHELL', 'wget -qO- http://localhost:5002/health || exit 1']
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+    command: yarn dev
+
+  prompt-engine:
+    <<: *ai-service-common
+    build:
+      context: ./ai-services/prompt-engine
+      dockerfile: Dockerfile
+      target: builder
+    container_name: ai-tutor-prompt-engine
+    ports:
+      - '5003:5003'
+    environment:
+      NODE_ENV: development
+      PORT: 5003
+      INTERNAL_SERVICE_SECRET: local-dev-internal-secret-min-32-chars
+    healthcheck:
+      test: ['CMD-SHELL', 'wget -qO- http://localhost:5003/health || exit 1']
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+    command: yarn dev
+
+  safety-guardrails:
+    <<: *ai-service-common
+    build:
+      context: ./ai-services/safety-guardrails
+      dockerfile: Dockerfile
+      target: builder
+    container_name: ai-tutor-safety-guardrails
+    ports:
+      - '5004:5004'
+    environment:
+      NODE_ENV: development
+      PORT: 5004
+      BLOCKED_TOPICS: violence,adult_content,harmful_chemicals,self_harm
+      INTERNAL_SERVICE_SECRET: local-dev-internal-secret-min-32-chars
+    healthcheck:
+      test: ['CMD-SHELL', 'wget -qO- http://localhost:5004/health || exit 1']
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+    command: yarn dev

@@ -1,16 +1,17 @@
 import type { Config } from 'jest';
 
 const config: Config = {
-  preset: 'ts-jest',
-  testEnvironment: 'node',
+  moduleFileExtensions: ['js', 'json', 'ts'],
   rootDir: 'src',
-  testRegex: '.*\\.test\\.ts$',
-  collectCoverageFrom: ['**/*.ts', '!**/index.ts', '!**/*.schema.ts'],
+  testRegex: '.*\\.spec\\.ts$',
+  transform: { '^.+\\.(t|j)s$': 'ts-jest' },
+  collectCoverageFrom: ['**/*.(t|j)s', '!**/main.ts', '!**/*.module.ts'],
   coverageDirectory: '../coverage',
+  testEnvironment: 'node',
+  moduleNameMapper: { '^@/(.*)$': '<rootDir>/$1' },
   coverageThresholds: {
     global: { branches: 70, functions: 70, lines: 70, statements: 70 },
   },
-  reporters: ['default'],
 };
 
 export default config;
