@@ -17,12 +17,10 @@ Built as a FAANG-style mono-repo across 6 NestJS microservices, 4 AI services, a
 git clone <repo-url>
 cd ai-tutor-platform
 
-# 2. Copy env files (edit API keys where needed)
-cp backend/auth-service/.env.example backend/auth-service/.env
-cp ai-services/llm-wrapper/.env.example ai-services/llm-wrapper/.env
-# Repeat for each service as needed
+# 2. Copy root env (add your API keys for AI services)
+cp .env.example .env
 
-# 3. Start all services
+# 3. Start all services (PostgreSQL, Redis, all microservices, frontend)
 docker-compose up --build
 
 # Services will be available at:
@@ -31,14 +29,28 @@ docker-compose up --build
 #   Session API:        http://localhost:8002/api
 #   Curriculum API:     http://localhost:8003/api
 #   Homework API:       http://localhost:8004/api
-#   Analytics API:      http://localhost:8005/api
-#   Payment API:        http://localhost:8006/api
-#   LLM Wrapper:        http://localhost:5001
-#   Vector DB:          http://localhost:5002
-#   Prompt Engine:      http://localhost:5003
-#   Safety Guardrails:  http://localhost:5004
+#   Analytics API:      http://localhost:8005
+#   Payment API:        http://localhost:8006
 #   PostgreSQL:         localhost:5432
 #   Redis:              localhost:6379
+
+# 4. Verify health checks
+curl http://localhost:8001/v1/health   # Auth (NestJS)
+curl http://localhost:8005/health      # Analytics (Express)
+```
+
+### Run without Docker (individual service)
+
+```bash
+# Install all workspace dependencies
+yarn install
+
+# Start infrastructure (Postgres + Redis) via Docker
+docker-compose up postgres redis -d
+
+# Run a specific service with hot-reload
+cd backend/auth-service
+yarn dev
 ```
 
 ## Repository Structure
@@ -51,8 +63,8 @@ ai-tutor-platform/
 │   ├── session-service/       # NestJS — AI teaching sessions          :8002
 │   ├── curriculum-service/    # NestJS — adaptive learning roadmaps    :8003
 │   ├── homework-service/      # NestJS — homework generation + grading :8004
-│   ├── analytics-service/     # NestJS — progress tracking             :8005
-│   └── payment-service/       # NestJS — Stripe subscriptions          :8006
+│   ├── analytics-service/     # Express — progress tracking             :8005
+│   └── payment-service/       # Express — Stripe subscriptions          :8006
 ├── ai-services/
 │   ├── llm-wrapper/           # OpenAI / Anthropic with failover       :5001
 │   ├── vector-db/             # Pinecone embeddings + RAG              :5002
@@ -120,11 +132,24 @@ Allowed scopes: `root`, `frontend`, `auth-service`, `session-service`, `curricul
 | 5 — Scale & Observability   | 17–20   | Upcoming      |
 | 6 — Hardening & Launch      | 21–24   | Upcoming      |
 
+## Branching Strategy
+
+This project uses **GitHub Flow** with a `develop` integration branch. See [docs/branching-strategy.md](docs/branching-strategy.md) for full details.
+
+| Branch      | Purpose              | Deploys To |
+|-------------|----------------------|------------|
+| `main`      | Production-ready     | Production |
+| `develop`   | Sprint integration   | Staging    |
+| `feature/*` | New features         | —          |
+| `fix/*`     | Bug fixes            | —          |
+| `hotfix/*`  | Urgent prod fixes    | —          |
+
 ## Further Reading
 
 - [Architecture Overview](docs/architecture/overview.md)
 - [API Documentation](docs/api/README.md)
 - [ADR-001: NestJS for backend microservices](docs/design/adr-001-nestjs-microservices.md)
+- [Branching Strategy](docs/branching-strategy.md)
 - [Backend Services README](backend/README.md)
 - [AI Services README](ai-services/README.md)
 - [Frontend README](frontend/README.md)
