@@ -5,7 +5,6 @@ import {
   HttpCode,
   HttpStatus,
   UseGuards,
-  Req,
   Headers,
   Get,
   Query,
@@ -16,12 +15,13 @@ import {
   ApiResponse,
   ApiBearerAuth,
 } from '@nestjs/swagger';
-import type { Request } from 'express';
+import { Throttle } from '@nestjs/throttler';
 
 import { AuthService } from './auth.service';
 import { RegisterDto } from './dto/register.dto';
 import { LoginDto } from './dto/login.dto';
 import { RefreshTokenDto } from './dto/refresh-token.dto';
+import { ResendVerificationDto } from './dto/resend-verification.dto';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 
 @ApiTags('auth')
@@ -31,13 +31,15 @@ export class AuthController {
 
   /**
    * POST /v1/auth/signup
-   * Register a new student account.
+   * Register a new student account. Sends a verification email.
    */
   @Post('signup')
   @HttpCode(HttpStatus.CREATED)
+  @Throttle({ default: { ttl: 60000, limit: 3 } })
   @ApiOperation({ summary: 'Register a new student account' })
   @ApiResponse({ status: 201, description: 'Account created successfully' })
   @ApiResponse({ status: 409, description: 'Email already in use' })
+  @ApiResponse({ status: 429, description: 'Too many requests' })
   async signup(@Body() dto: RegisterDto): Promise<object> {
     const result = await this.authService.register(dto);
     return { success: true, data: result, message: 'Account created. Please verify your email.' };
@@ -47,12 +49,15 @@ export class AuthController {
    * POST /v1/auth/login
    * Authenticate with email + password.
    * Returns an access token (15 min) and refresh token (7 days).
+   * Requires email to be verified.
    */
   @Post('login')
   @HttpCode(HttpStatus.OK)
+  @Throttle({ default: { ttl: 60000, limit: 5 } })
   @ApiOperation({ summary: 'Authenticate and receive JWT tokens' })
   @ApiResponse({ status: 200, description: 'Login successful' })
-  @ApiResponse({ status: 401, description: 'Invalid credentials' })
+  @ApiResponse({ status: 401, description: 'Invalid credentials or unverified email' })
+  @ApiResponse({ status: 429, description: 'Too many requests' })
   async login(@Body() dto: LoginDto): Promise<object> {
     const tokens = await this.authService.login(dto);
     return { success: true, data: tokens };
@@ -65,6 +70,7 @@ export class AuthController {
    */
   @Post('refresh-token')
   @HttpCode(HttpStatus.OK)
+  @Throttle({ default: { ttl: 60000, limit: 10 } })
   @ApiOperation({ summary: 'Refresh access token using a valid refresh token' })
   @ApiResponse({ status: 200, description: 'Tokens refreshed' })
   @ApiResponse({ status: 401, description: 'Invalid or expired refresh token' })
@@ -90,14 +96,33 @@ export class AuthController {
   }
 
   /**
-   * GET /v1/auth/verify-email
+   * GET /v1/auth/verify-email?token=xxx
    * Verify email address using the token sent to the user's inbox.
    */
   @Get('verify-email')
   @HttpCode(HttpStatus.OK)
+  @Throttle({ default: { ttl: 60000, limit: 5 } })
   @ApiOperation({ summary: 'Verify email address using token from email' })
-  async verifyEmail(@Query('token') _token: string, @Req() _req: Request): Promise<object> {
-    // TODO Sprint 2: implement email verification token lookup + marking
-    return { success: false, message: 'Not implemented – Sprint 2' };
+  @ApiResponse({ status: 200, description: 'Email verified successfully' })
+  @ApiResponse({ status: 400, description: 'Invalid or expired verification token' })
+  async verifyEmail(@Query('token') token: string): Promise<object> {
+    const result = await this.authService.verifyEmail(token);
+    return { success: true, ...result };
+  }
+
+  /**
+   * POST /v1/auth/resend-verification
+   * Request a new verification email. Returns a generic message to prevent
+   * email enumeration attacks.
+   */
+  @Post('resend-verification')
+  @HttpCode(HttpStatus.OK)
+  @Throttle({ default: { ttl: 60000, limit: 3 } })
+  @ApiOperation({ summary: 'Resend email verification link' })
+  @ApiResponse({ status: 200, description: 'Verification email sent if account exists' })
+  @ApiResponse({ status: 429, description: 'Too many requests' })
+  async resendVerification(@Body() dto: ResendVerificationDto): Promise<object> {
+    const result = await this.authService.resendVerification(dto.email);
+    return { success: true, ...result };
   }
 }

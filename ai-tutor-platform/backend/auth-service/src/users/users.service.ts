@@ -2,6 +2,7 @@ import { Injectable, NotFoundException, ConflictException } from '@nestjs/common
 import { InjectRepository } from '@nestjs/typeorm';
 import type { Repository } from 'typeorm';
 import * as bcrypt from 'bcrypt';
+import { randomUUID } from 'crypto';
 import { ConfigService } from '@nestjs/config';
 
 import { User, UserRole } from './users.entity';
@@ -50,6 +51,34 @@ export class UsersService {
       .createQueryBuilder('user')
       .addSelect('user.passwordHash')
       .where('user.email = :email', { email: email.toLowerCase() })
+      .getOne();
+  }
+
+  /**
+   * Generate a cryptographically random verification token and store it
+   * on the user record with a 24-hour expiry.
+   */
+  async setVerificationToken(userId: string): Promise<string> {
+    const token = randomUUID();
+    const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000); // 24 hours
+
+    await this.usersRepository.update(userId, {
+      emailVerificationToken: token,
+      emailVerificationExpiresAt: expiresAt,
+    });
+
+    return token;
+  }
+
+  /**
+   * Look up a user by their email verification token.
+   * Selects the hidden `emailVerificationToken` column for comparison.
+   */
+  async findByVerificationToken(token: string): Promise<User | null> {
+    return this.usersRepository
+      .createQueryBuilder('user')
+      .addSelect('user.emailVerificationToken')
+      .where('user.emailVerificationToken = :token', { token })
       .getOne();
   }
 

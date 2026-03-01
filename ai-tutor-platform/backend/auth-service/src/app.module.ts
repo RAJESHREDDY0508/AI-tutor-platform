@@ -1,7 +1,8 @@
 import { Module } from '@nestjs/common';
+import { APP_GUARD } from '@nestjs/core';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
-import { ThrottlerModule } from '@nestjs/throttler';
+import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
 import { WinstonModule } from 'nest-winston';
 import * as winston from 'winston';
 
@@ -9,12 +10,12 @@ import { AppController } from './app.controller';
 import { AuthModule } from './auth/auth.module';
 import { UsersModule } from './users/users.module';
 import { QueueModule } from './queue/queue.module';
+import { RedisModule } from './redis/redis.module';
 import { databaseConfig } from './config/database.config';
 import { jwtConfig } from './config/jwt.config';
 import { redisConfig } from './config/redis.config';
 import { validateEnv } from './config/env.validation';
 import { User } from './users/users.entity';
-import Redis from 'ioredis';
 
 @Module({
   imports: [
@@ -85,6 +86,9 @@ import Redis from 'ioredis';
       inject: [ConfigService],
     }),
 
+    // ── Infrastructure modules ──────────────────────────────────────────
+    RedisModule,
+
     // ── Feature modules ──────────────────────────────────────────────────
     AuthModule,
     UsersModule,
@@ -92,27 +96,10 @@ import Redis from 'ioredis';
   ],
   controllers: [AppController],
   providers: [
-    // ── Redis client (provided as a factory token) ───────────────────────
     {
-      provide: 'REDIS_CLIENT',
-      useFactory: (config: ConfigService): Redis => {
-        const client = new Redis({
-          host: config.getOrThrow<string>('REDIS_HOST'),
-          port: config.get<number>('REDIS_PORT', 6379),
-          password: config.get<string>('REDIS_PASSWORD') || undefined,
-          lazyConnect: true,
-          maxRetriesPerRequest: 3,
-        });
-
-        client.on('error', (err: Error) => {
-          console.error('[Redis] Connection error:', err.message);
-        });
-
-        return client;
-      },
-      inject: [ConfigService],
+      provide: APP_GUARD,
+      useClass: ThrottlerGuard,
     },
   ],
-  exports: ['REDIS_CLIENT'],
 })
 export class AppModule {}

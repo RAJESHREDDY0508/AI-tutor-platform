@@ -4,7 +4,7 @@ import type { JwtModuleOptions } from '@nestjs/jwt';
 export const jwtConfig = registerAs(
   'jwt',
   (): JwtModuleOptions => ({
-    secret: process.env['JWT_SECRET'],
+    secret: process.env['JWT_SECRET'] ?? 'changeme',
     signOptions: {
       expiresIn: process.env['JWT_ACCESS_EXPIRES_IN'] ?? '15m',
       issuer: process.env['JWT_ISSUER'] ?? 'ai-tutor-platform',

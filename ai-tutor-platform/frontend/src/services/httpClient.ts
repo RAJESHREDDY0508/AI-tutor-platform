@@ -31,27 +31,82 @@ export function createHttpClient(baseURL: string, config?: AxiosRequestConfig): 
     (error: unknown) => Promise.reject(error),
   );
 
-  // ── Response interceptor: normalise errors ────────────────────────────
+  // ── Response interceptor: 401 → refresh token, then normalise errors ──
+  let isRefreshing = false;
+  let refreshSubscribers: Array<(token: string) => void> = [];
+
+  function onTokenRefreshed(token: string) {
+    refreshSubscribers.forEach((cb) => cb(token));
+    refreshSubscribers = [];
+  }
+
   client.interceptors.response.use(
     (response: AxiosResponse) => response,
-    (error: unknown) => {
-      if (axios.isAxiosError(error)) {
-        const status = error.response?.status;
+    async (error: unknown) => {
+      if (!axios.isAxiosError(error)) return Promise.reject(error);
 
-        if (status === 401) {
-          // Token expired – clear storage; redirect handled by router guard
-          localStorage.removeItem('access_token');
-          localStorage.removeItem('refresh_token');
+      const originalRequest = error.config;
+      const status = error.response?.status;
+
+      // Attempt silent refresh on 401 (skip if this IS the refresh or login call)
+      if (
+        status === 401 &&
+        originalRequest &&
+        !originalRequest.url?.includes('/v1/auth/refresh-token') &&
+        !originalRequest.url?.includes('/v1/auth/login')
+      ) {
+        const refreshToken = localStorage.getItem('refresh_token');
+
+        if (refreshToken) {
+          if (!isRefreshing) {
+            isRefreshing = true;
+            try {
+              const res = await axios.post<{ data: { accessToken: string; refreshToken: string } }>(
+                '/api/auth/v1/auth/refresh-token',
+                { refreshToken },
+              );
+              const { accessToken: newAccess, refreshToken: newRefresh } = res.data.data;
+              localStorage.setItem('access_token', newAccess);
+              localStorage.setItem('refresh_token', newRefresh);
+              isRefreshing = false;
+              onTokenRefreshed(newAccess);
+
+              // Retry original request with new token
+              originalRequest.headers['Authorization'] = `Bearer ${newAccess}`;
+              return client(originalRequest);
+            } catch {
+              isRefreshing = false;
+              refreshSubscribers = [];
+              localStorage.removeItem('access_token');
+              localStorage.removeItem('refresh_token');
+              localStorage.removeItem('user');
+              window.location.href = '/login';
+              return Promise.reject(error);
+            }
+          }
+
+          // Queue requests while refresh is in progress
+          return new Promise((resolve) => {
+            refreshSubscribers.push((token: string) => {
+              originalRequest.headers['Authorization'] = `Bearer ${token}`;
+              resolve(client(originalRequest));
+            });
+          });
         }
 
-        const message: string =
-          (error.response?.data as Record<string, string> | undefined)?.['message'] ??
-          error.message ??
-          'An unexpected error occurred';
-
-        return Promise.reject(new Error(message));
+        // No refresh token — clear and redirect
+        localStorage.removeItem('access_token');
+        localStorage.removeItem('refresh_token');
+        localStorage.removeItem('user');
+        window.location.href = '/login';
       }
-      return Promise.reject(error);
+
+      const message: string =
+        (error.response?.data as Record<string, string> | undefined)?.['message'] ??
+        error.message ??
+        'An unexpected error occurred';
+
+      return Promise.reject(new Error(message));
     },
   );
 

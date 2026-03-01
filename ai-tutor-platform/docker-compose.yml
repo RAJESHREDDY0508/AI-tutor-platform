@@ -149,6 +149,7 @@ services:
       BCRYPT_ROUNDS: 10
       THROTTLE_TTL_SECONDS: 60
       THROTTLE_LIMIT: 100
+      FRONTEND_URL: http://localhost:3000
       INTERNAL_SERVICE_SECRET: local-dev-internal-secret-min-32-chars
       AWS_REGION: us-east-1
     healthcheck:

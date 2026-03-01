@@ -80,7 +80,19 @@
       "Bash(/c/Users/rajes/Desktop/Teacher/ai-tutor-platform/backend/payment-service/src/index.ts:*)",
       "Bash(/c/Users/rajes/Desktop/Teacher/ai-tutor-platform/backend/README.md:*)",
       "Bash(chmod:*)",
-      "Bash(python -c \":*)"
+      "Bash(python -c \":*)",
+      "Bash(npm install -D tailwindcss @tailwindcss/vite)",
+      "Bash(yarn add -D tailwindcss @tailwindcss/vite)",
+      "Bash(node -e \"console.log\\(process.version\\)\")",
+      "Bash(npm --version)",
+      "Bash(npm install --save-dev tailwindcss @tailwindcss/vite)",
+      "Bash(ls /c/Users/rajes/Desktop/Teacher/ai-tutor-platform/backend/auth-service/jest.config*)",
+      "Bash(npm install)",
+      "Bash(npm install --ignore-scripts)",
+      "Bash(npx jest --no-cache)",
+      "Bash(npx jest --no-coverage)",
+      "Bash(npx tsc --noEmit)",
+      "Bash(npx vite build)"
     ]
   }
 }

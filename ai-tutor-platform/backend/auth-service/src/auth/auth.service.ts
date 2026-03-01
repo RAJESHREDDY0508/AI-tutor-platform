@@ -1,18 +1,20 @@
 import {
   Injectable,
   UnauthorizedException,
+  BadRequestException,
   Logger,
+  Inject,
 } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
 import type { Redis } from 'ioredis';
-import { Inject } from '@nestjs/common';
 
 import { UsersService } from '../users/users.service';
 import type { User } from '../users/users.entity';
 import type { RegisterDto } from './dto/register.dto';
 import type { LoginDto } from './dto/login.dto';
-import type { JwtPayload } from '@ai-tutor/common';
+import type { JwtPayload } from '../common/types/jwt-payload.type';
+import { SqsClient } from '../queue/sqs.client';
 
 export interface AuthTokens {
   accessToken: string;
@@ -31,10 +33,12 @@ export class AuthService {
     private readonly jwtService: JwtService,
     private readonly configService: ConfigService,
     @Inject('REDIS_CLIENT') private readonly redis: Redis,
+    private readonly sqsClient: SqsClient,
   ) {}
 
   async register(dto: RegisterDto): Promise<{ user: ReturnType<User['toSafeObject']> }> {
     const user = await this.usersService.create(dto);
+    await this.sendVerificationEmail(user);
     this.logger.log({ userId: user.id }, 'New user registered');
     return { user: user.toSafeObject() };
   }
@@ -50,11 +54,63 @@ export class AuthService {
       throw new UnauthorizedException('Account is deactivated');
     }
 
+    if (!user.isEmailVerified) {
+      throw new UnauthorizedException('Please verify your email before logging in');
+    }
+
     const tokens = await this.generateTokenPair(user);
     await this.usersService.updateLastLogin(user.id);
 
     this.logger.log({ userId: user.id }, 'User logged in');
     return tokens;
+  }
+
+  async verifyEmail(token: string): Promise<{ message: string }> {
+    if (!token) {
+      throw new BadRequestException('Verification token is required');
+    }
+
+    const user = await this.usersService.findByVerificationToken(token);
+    if (!user) {
+      throw new BadRequestException('Invalid or expired verification token');
+    }
+
+    if (user.emailVerificationExpiresAt && user.emailVerificationExpiresAt < new Date()) {
+      throw new BadRequestException('Verification token has expired. Please request a new one.');
+    }
+
+    await this.usersService.markEmailVerified(user.id);
+    this.logger.log({ userId: user.id }, 'Email verified');
+    return { message: 'Email verified successfully' };
+  }
+
+  async resendVerification(email: string): Promise<{ message: string }> {
+    const user = await this.usersService.findByEmail(email);
+
+    // Always return success to prevent email enumeration
+    if (!user || user.isEmailVerified) {
+      return { message: 'If that email exists and is unverified, a new verification link has been sent.' };
+    }
+
+    await this.sendVerificationEmail(user);
+    this.logger.log({ userId: user.id }, 'Verification email resent');
+    return { message: 'If that email exists and is unverified, a new verification link has been sent.' };
+  }
+
+  private async sendVerificationEmail(user: User): Promise<void> {
+    const token = await this.usersService.setVerificationToken(user.id);
+    const frontendUrl = this.configService.get<string>('FRONTEND_URL', 'http://localhost:3000');
+    const verifyUrl = `${frontendUrl}/verify-email?token=${token}`;
+
+    await this.sqsClient.sendEmailNotification({
+      to: user.email,
+      subject: 'Verify your email — AI Tutor Platform',
+      templateId: 'email-verification',
+      data: {
+        firstName: user.firstName,
+        verifyUrl,
+      },
+    });
   }
 
   async refresh(refreshToken: string): Promise<AuthTokens> {

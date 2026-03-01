@@ -1,40 +1,61 @@
-import React from 'react';
-import { BrowserRouter, Route, Routes } from 'react-router-dom';
+import React, { useEffect } from 'react';
+import { BrowserRouter, Route, Routes, Navigate } from 'react-router-dom';
 
 import { QueryProvider } from '@context/QueryProvider';
+import { useAuthStore } from '@/stores/authStore';
+import { Navbar } from '@/components/layout/Navbar';
+import { ProtectedRoute } from '@/components/common/ProtectedRoute';
+import { LoginPage } from '@/pages/LoginPage';
+import { SignupPage } from '@/pages/SignupPage';
+import { VerifyEmailPage } from '@/pages/VerifyEmailPage';
+import { DashboardPage } from '@/pages/DashboardPage';
 
-/**
- * Root application component.
- *
- * Route structure:
- *  /              → LandingPage   (public)
- *  /login         → LoginPage     (public)
- *  /dashboard     → Dashboard     (protected – Sprint 2+)
- *  /session/:id   → SessionPage   (protected – Sprint 6+)
- *  *              → NotFoundPage
- */
 const App: React.FC = () => {
+  const hydrateFromStorage = useAuthStore((s) => s.hydrateFromStorage);
+
+  useEffect(() => {
+    hydrateFromStorage();
+  }, [hydrateFromStorage]);
+
   return (
     <QueryProvider>
       <BrowserRouter>
-        <Routes>
-          {/* ── Public routes ── */}
-          <Route path="/" element={<PlaceholderPage title="AI Tutor Platform" />} />
-          <Route path="/login" element={<PlaceholderPage title="Login" />} />
+        <div className="flex min-h-screen flex-col bg-gray-50">
+          <Navbar />
+          <main className="flex-1">
+            <Routes>
+              {/* ── Public routes ── */}
+              <Route path="/" element={<Navigate to="/login" replace />} />
+              <Route path="/login" element={<LoginPage />} />
+              <Route path="/signup" element={<SignupPage />} />
+              <Route path="/verify-email" element={<VerifyEmailPage />} />
 
-          {/* ── Catch-all ── */}
-          <Route path="*" element={<PlaceholderPage title="404 – Not Found" />} />
-        </Routes>
+              {/* ── Protected routes ── */}
+              <Route
+                path="/dashboard"
+                element={
+                  <ProtectedRoute>
+                    <DashboardPage />
+                  </ProtectedRoute>
+                }
+              />
+
+              {/* ── Catch-all ── */}
+              <Route path="*" element={<NotFoundPage />} />
+            </Routes>
+          </main>
+        </div>
       </BrowserRouter>
     </QueryProvider>
   );
 };
 
-/** Temporary placeholder – replaced in Sprint 2+ with real pages. */
-const PlaceholderPage: React.FC<{ title: string }> = ({ title }) => (
-  <div style={{ fontFamily: 'sans-serif', padding: '2rem' }}>
-    <h1>{title}</h1>
-    <p>Sprint 1 scaffold – UI implementation begins in Sprint 2.</p>
+const NotFoundPage: React.FC = () => (
+  <div className="flex min-h-[60vh] items-center justify-center">
+    <div className="text-center">
+      <h1 className="text-4xl font-bold text-gray-900">404</h1>
+      <p className="mt-2 text-gray-600">Page not found</p>
+    </div>
   </div>
 );
 

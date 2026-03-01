@@ -32,7 +32,7 @@ export interface User {
   readonly createdAt: string;
 }
 
-export type UserRole = 'student' | 'admin';
+export type UserRole = 'student' | 'parent' | 'admin';
 
 export interface AuthTokens {
   readonly accessToken: string;

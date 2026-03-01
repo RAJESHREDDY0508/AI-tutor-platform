@@ -12,7 +12,7 @@ interface ErrorResponse {
   success: false;
   statusCode: number;
   message: string | string[];
-  error?: string;
+  error?: string | undefined;
   timestamp: string;
   path: string;
 }
